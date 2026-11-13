@@ -10,13 +10,15 @@ pub fn scan_directory(path: &Path) {
     let root = match fs::canonicalize(path) {
         Ok(root) => root,
         Err(error) => {
-            eprintln!("[ERROR] Cannot access directory: {}", error);
+            eprintln!("[ERROR] Cannot access directory: {error}");
             return;
         }
     };
 
     let quarantine_dir = root.join(".pscanav-quarantine");
 
+    let mut files_scanned = 0usize;
+    let mut errors = 0usize;
     let mut suspicious_files: Vec<PathBuf> = Vec::new();
     let mut malicious_files: Vec<PathBuf> = Vec::new();
 
@@ -28,55 +30,65 @@ pub fn scan_directory(path: &Path) {
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) => continue,
+            Err(error) => {
+                eprintln!("[ERROR] {error}");
+                errors += 1;
+                continue;
+            }
         };
 
         if !entry.file_type().is_file() {
             continue;
         }
 
-        let verification = match verify_file(entry.path(), &quarantine_dir) {
-            Ok(report) => report,
-            Err(_) => continue,
-        };
+        match verify_file(entry.path(), &quarantine_dir) {
+            Ok(verification) => {
+                files_scanned += 1;
 
-        match &verification.verdict {
-            Verdict::NoKnownThreats => {}
+                match verification.verdict {
+                    Verdict::NoKnownThreats => {}
+                    Verdict::Suspicious => {
+                        suspicious_files.push(entry.path().to_path_buf());
+                    }
+                    Verdict::ConfirmedMalicious => {
+                        let display_path = verification
+                            .quarantined_to
+                            .as_deref()
+                            .unwrap_or(entry.path());
 
-            Verdict::Suspicious => {
-                suspicious_files.push(entry.path().to_path_buf());
+                        malicious_files.push(display_path.to_path_buf());
+                    }
+                }
             }
-
-            Verdict::ConfirmedMalicious => {
-                let display_path = verification
-                    .quarantined_to
-                    .as_deref()
-                    .unwrap_or(entry.path());
-
-                malicious_files.push(display_path.to_path_buf());
+            Err(error) => {
+                eprintln!(
+                    "[ERROR] Could not verify {}: {error}",
+                    entry.path().display()
+                );
+                errors += 1;
             }
         }
     }
 
-    println!("==================");
+    println!("\n==================");
     println!("  Scan Completed");
     println!("==================");
 
+    println!("\n[SUMMARY]");
+    println!("Files scanned: {files_scanned}");
+    println!("Errors: {errors}");
+    println!("Suspicious: {}", suspicious_files.len());
+    println!("Malicious: {}", malicious_files.len());
+
     if !suspicious_files.is_empty() {
         println!("\n[SUSPICIOUS]");
-
         for file in &suspicious_files {
             println!("{}", file.display());
         }
     }
 
     if !malicious_files.is_empty() {
-        if suspicious_files.is_empty() {
-            println!("\n[MALICIOUS]");
-        } else {
-            println!("\n\n[MALICIOUS]");
-        }
-
+        println!("\n[MALICIOUS]");
         for file in &malicious_files {
             println!("{}", file.display());
         }
