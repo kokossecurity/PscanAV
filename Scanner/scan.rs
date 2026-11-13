@@ -21,7 +21,6 @@ fn calculate_hash(path: &Path) -> io::Result<String> {
 
     loop {
         let bytes_read = file.read(&mut buffer)?;
-
         if bytes_read == 0 {
             break;
         }
@@ -39,16 +38,12 @@ pub fn scan_directory(path: &Path) -> ScanReport {
     };
 
     println!("\n========== PSCANAV ==========");
-    println!("Scanning: {}\n", path.display());
+    println!("Scanning directory...\n");
 
-    for entry in WalkDir::new(path)
-        .follow_links(false)
-        .into_iter()
-    {
+    for entry in WalkDir::new(path).follow_links(false) {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(error) => {
-                eprintln!("[ERROR] {}", error);
+            Err(_) => {
                 report.errors += 1;
                 continue;
             }
@@ -58,24 +53,12 @@ pub fn scan_directory(path: &Path) -> ScanReport {
             continue;
         }
 
-        let file_path = entry.path();
-
-        match calculate_hash(file_path) {
-            Ok(hash) => {
+        match calculate_hash(entry.path()) {
+            Ok(_hash) => {
                 report.files_scanned += 1;
-
-                println!("[SCANNED] {}", file_path.display());
-                println!("SHA256: {}\n", hash);
             }
-
-            Err(error) => {
+            Err(_) => {
                 report.errors += 1;
-
-                eprintln!(
-                    "[ERROR] {}: {}",
-                    file_path.display(),
-                    error
-                );
             }
         }
     }
@@ -83,6 +66,7 @@ pub fn scan_directory(path: &Path) -> ScanReport {
     println!("========== RESULTS ==========");
     println!("Files scanned: {}", report.files_scanned);
     println!("Errors: {}", report.errors);
+    println!("=============================");
 
     report
 }
