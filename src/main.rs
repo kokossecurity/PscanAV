@@ -1,4 +1,7 @@
 
+#[path = "../Verifier/verify.rs"]
+mod verifier;
+
 #[path = "../Scanner/scan.rs"]
 mod file_scanner;
 
@@ -29,12 +32,5 @@ fn main() {
     println!("[+] Target: {}", target.display());
     println!("[+] Starting scan...\n");
 
-    let report = file_scanner::scan_directory(target);
-
-    println!("\n================================");
-    println!("          SCAN COMPLETE");
-    println!("================================");
-    println!("Files scanned: {}", report.files_scanned);
-    println!("Errors: {}", report.errors);
-    println!("================================");
+    file_scanner::scan_directory(target);
 }
