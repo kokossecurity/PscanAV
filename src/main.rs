@@ -1,5 +1,5 @@
 
-#[path = "../verifier/verify.rs"]
+#[path = "../verifier/verifier.rs"]
 mod verifier;
 
 #[path = "../Scanner/scan.rs"]
