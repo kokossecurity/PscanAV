@@ -90,10 +90,11 @@ pub fn scan_directory(path: &Path) {
         );
 
         let _ = io::stdout().flush();
+    }
 
-        println!("\n\n================================");
-println!("          Scan Completed");
-println!("================================");
+    println!("\n\n================================");
+    println!("          Scan Completed");
+    println!("================================");
 
     println!("\n[SUMMARY]");
     println!("Files discovered: {total}");
