@@ -8,10 +8,8 @@ use std::{
 
 const BUFFER_SIZE: usize = 64 * 1024;
 
-// Only add hashes from trusted threat-intelligence sources.
 const KNOWN_BAD_SHA256: &[&str] = &[];
 
-// Harmless standardized antivirus test signature.
 const EICAR_SIGNATURE: &[u8] =
     b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
 
@@ -42,15 +40,11 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; BUFFER_SIZE];
     let mut header = Vec::new();
-
-    // Preserve enough trailing bytes to detect signatures
-    // split across consecutive read buffers.
     let mut carry = Vec::new();
     let mut eicar_detected = false;
 
     loop {
         let bytes_read = file.read(&mut buffer)?;
-
         if bytes_read == 0 {
             break;
         }
@@ -68,12 +62,9 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
             combined.extend_from_slice(&carry);
             combined.extend_from_slice(chunk);
 
-            if combined
+            eicar_detected = combined
                 .windows(EICAR_SIGNATURE.len())
-                .any(|window| window == EICAR_SIGNATURE)
-            {
-                eicar_detected = true;
-            }
+                .any(|window| window == EICAR_SIGNATURE);
 
             let keep = combined.len().min(EICAR_SIGNATURE.len() - 1);
             carry = combined[combined.len() - keep..].to_vec();
@@ -111,5 +102,26 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
     })
 }
 
-// Keep your existing identify_file_type implementation below.
-// Keep any other existing helper functions required by your project.
+fn identify_file_type(header: &[u8]) -> &'static str {
+    if header.starts_with(b"\x7FELF") {
+        "ELF executable"
+    } else if header.starts_with(b"MZ") {
+        "Windows executable"
+    } else if header.starts_with(b"#!") {
+        "Script"
+    } else if header.starts_with(b"PK\x03\x04") {
+        "ZIP archive"
+    } else if header.starts_with(b"\x1F\x8B") {
+        "GZIP archive"
+    } else if header.starts_with(b"%PDF") {
+        "PDF document"
+    } else if header.starts_with(b"\x89PNG\r\n\x1A\n") {
+        "PNG image"
+    } else if header.starts_with(b"\xFF\xD8\xFF") {
+        "JPEG image"
+    } else if header.is_empty() {
+        "Empty file"
+    } else {
+        "Unknown"
+    }
+}
