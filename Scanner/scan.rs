@@ -2,6 +2,7 @@
 use crate::verifier::{verify_file, Verdict};
 use std::{
     fs,
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
@@ -17,64 +18,96 @@ pub fn scan_directory(path: &Path) {
 
     let quarantine_dir = root.join(".pscanav-quarantine");
 
-    let mut files_scanned = 0usize;
+    let mut files: Vec<PathBuf> = Vec::new();
     let mut errors = 0usize;
-    let mut suspicious_files: Vec<PathBuf> = Vec::new();
-    let mut malicious_files: Vec<PathBuf> = Vec::new();
 
-    let entries = WalkDir::new(&root)
+    println!("[+] Discovering files...");
+
+    for entry in WalkDir::new(&root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| entry.path() != quarantine_dir.as_path());
-
-    for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
+        .filter_entry(|entry| entry.path() != quarantine_dir.as_path())
+    {
+        match entry {
+            Ok(entry) if entry.file_type().is_file() => {
+                files.push(entry.path().to_path_buf());
+            }
+            Ok(_) => {}
             Err(error) => {
                 eprintln!("[ERROR] {error}");
                 errors += 1;
-                continue;
             }
-        };
-
-        if !entry.file_type().is_file() {
-            continue;
         }
+    }
 
-        match verify_file(entry.path(), &quarantine_dir) {
-            Ok(verification) => {
+    let total = files.len();
+    let mut files_scanned = 0usize;
+
+    let mut suspicious_files = Vec::new();
+    let mut malicious_files = Vec::new();
+
+    println!("[+] Found {total} files.");
+    println!("[+] Starting scan...\n");
+
+    for file in &files {
+        match verify_file(file, &quarantine_dir) {
+            Ok(report) => {
                 files_scanned += 1;
 
-                match verification.verdict {
+                match report.verdict {
                     Verdict::NoKnownThreats => {}
                     Verdict::Suspicious => {
-                        suspicious_files.push(entry.path().to_path_buf());
+                        suspicious_files.push(file.clone());
                     }
                     Verdict::ConfirmedMalicious => {
-                        let display_path = verification
+                        let display_path = report
                             .quarantined_to
                             .as_deref()
-                            .unwrap_or(entry.path());
+                            .unwrap_or(file);
 
                         malicious_files.push(display_path.to_path_buf());
                     }
                 }
             }
             Err(error) => {
-                eprintln!(
-                    "[ERROR] Could not verify {}: {error}",
-                    entry.path().display()
-                );
                 errors += 1;
+                eprintln!(
+                    "\n[ERROR] {}: {error}",
+                    file.display()
+                );
             }
         }
+
+        let progress = files_scanned + errors;
+        let percent = if total == 0 {
+            100
+        } else {
+            progress * 100 / total
+        };
+
+        let bar_length = 30;
+        let filled = percent * bar_length / 100;
+
+        let bar = format!(
+            "{}{}",
+            "#".repeat(filled),
+            "-".repeat(bar_length - filled)
+        );
+
+        print!(
+            "\r[{}] {}% ({}/{})",
+            bar, percent, progress, total
+        );
+
+        let _ = io::stdout().flush();
     }
 
-    println!("\n==================");
+    println!("\n\n==================");
     println!("  Scan Completed");
     println!("==================");
 
     println!("\n[SUMMARY]");
+    println!("Files discovered: {total}");
     println!("Files scanned: {files_scanned}");
     println!("Errors: {errors}");
     println!("Suspicious: {}", suspicious_files.len());
