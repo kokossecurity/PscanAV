@@ -5,8 +5,7 @@ mod verifier;
 #[path = "../Scanner/scan.rs"]
 mod file_scanner;
 
-use std::env;
-use std::path::Path;
+use std::{env, path::Path};
 
 fn main() {
     println!("================================");
@@ -14,23 +13,30 @@ fn main() {
     println!("     Linux File Scanner");
     println!("================================");
 
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = env::args().skip(1).collect();
 
-    if args.len() != 2 {
-        eprintln!("\nUsage: pscanav <directory>");
-        return;
-    }
-
-    let target = Path::new(&args[1]);
-
-    if !target.is_dir() {
-        eprintln!("\n[ERROR] Invalid directory.");
+    if args.is_empty() {
+        eprintln!("\n[ERROR] No scan targets provided.");
         return;
     }
 
     println!("\n[+] Initializing PscanAV...");
-    println!("[+] Target: {}", target.display());
-    println!("[+] Starting scan...\n");
+    println!("[+] Scan targets: {}", args.len());
 
-    file_scanner::scan_directory(target);
+    for target in &args {
+        let path = Path::new(target);
+
+        if !path.is_dir() {
+            eprintln!("\n[ERROR] Invalid directory: {}", path.display());
+            continue;
+        }
+
+        println!("\n================================");
+        println!("[+] Target: {}", path.display());
+        println!("================================");
+
+        file_scanner::scan_directory(path);
+    }
+
+    println!("\n[+] All scan targets processed.");
 }
