@@ -17,7 +17,6 @@ pub fn scan_directory(path: &Path) {
     };
 
     let quarantine_dir = root.join(".pscanav-quarantine");
-
     let mut files: Vec<PathBuf> = Vec::new();
     let mut errors = 0usize;
 
@@ -42,9 +41,8 @@ pub fn scan_directory(path: &Path) {
 
     let total = files.len();
     let mut files_scanned = 0usize;
-
-    let mut suspicious_files = Vec::new();
-    let mut malicious_files = Vec::new();
+    let mut suspicious_files: Vec<PathBuf> = Vec::new();
+    let mut malicious_files: Vec<PathBuf> = Vec::new();
 
     println!("[+] Found {total} files.");
     println!("[+] Starting scan...\n");
@@ -71,18 +69,15 @@ pub fn scan_directory(path: &Path) {
             }
             Err(error) => {
                 errors += 1;
-                eprintln!(
-                    "\n[ERROR] {}: {error}",
-                    file.display()
-                );
+                eprintln!("\n[ERROR] {}: {error}", file.display());
             }
         }
 
-        let progress = files_scanned + errors;
+        let completed = files_scanned + errors;
         let percent = if total == 0 {
             100
         } else {
-            progress * 100 / total
+            completed * 100 / total
         };
 
         let bar_length = 30;
@@ -96,7 +91,7 @@ pub fn scan_directory(path: &Path) {
 
         print!(
             "\r[{}] {}% ({}/{})",
-            bar, percent, progress, total
+            bar, percent, completed, total
         );
 
         let _ = io::stdout().flush();
