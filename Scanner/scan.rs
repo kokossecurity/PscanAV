@@ -43,8 +43,8 @@ pub fn scan_directory(path: &Path) {
     let mut scanned = 0usize;
     let mut scan_errors = 0usize;
 
-    let mut suspicious = Vec::new();
-    let mut malicious = Vec::new();
+    let mut suspicious: Vec<PathBuf> = Vec::new();
+    let mut malicious: Vec<PathBuf> = Vec::new();
 
     println!("[+] Found {total} files.");
     println!("[+] Starting scan...\n");
@@ -57,20 +57,10 @@ pub fn scan_directory(path: &Path) {
                 match report.verdict {
                     Verdict::NoKnownThreats => {}
                     Verdict::Suspicious => {
-                        suspicious.push((
-                            file.clone(),
-                            report.sha256,
-                            report.file_type,
-                            report.findings,
-                        ));
+                        suspicious.push(file.clone());
                     }
                     Verdict::ConfirmedMalicious => {
-                        malicious.push((
-                            file.clone(),
-                            report.sha256,
-                            report.file_type,
-                            report.findings,
-                        ));
+                        malicious.push(file.clone());
                     }
                 }
             }
@@ -80,9 +70,7 @@ pub fn scan_directory(path: &Path) {
             }
         }
 
-        // Each discovered file contributes exactly once.
         let completed = scanned + scan_errors;
-
         let percent = if total == 0 {
             100
         } else {
@@ -111,37 +99,23 @@ pub fn scan_directory(path: &Path) {
     println!("\n[SUMMARY]");
     println!("Files discovered: {total}");
     println!("Files scanned: {scanned}");
-    println!("Discovery errors: {discovery_errors}");
-    println!("Scan errors: {scan_errors}");
-    println!("Total errors: {}", discovery_errors + scan_errors);
+    println!("Errors: {}", discovery_errors + scan_errors);
     println!("Suspicious: {}", suspicious.len());
     println!("Malicious: {}", malicious.len());
 
     if !suspicious.is_empty() {
         println!("\n[SUSPICIOUS FILES]");
 
-        for (file, sha256, file_type, findings) in &suspicious {
-            println!("\n{}", file.display());
-            println!("  Format: {file_type}");
-            println!("  SHA-256: {sha256}");
-
-            for finding in findings {
-                println!("  - {finding}");
-            }
+        for file in &suspicious {
+            println!("{}", file.display());
         }
     }
 
     if !malicious.is_empty() {
         println!("\n[CONFIRMED MALICIOUS FILES]");
 
-        for (file, sha256, file_type, findings) in &malicious {
-            println!("\n{}", file.display());
-            println!("  Format: {file_type}");
-            println!("  SHA-256: {sha256}");
-
-            for finding in findings {
-                println!("  - {finding}");
-            }
+        for file in &malicious {
+            println!("{}", file.display());
         }
     }
 
