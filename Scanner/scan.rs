@@ -16,17 +16,12 @@ pub fn scan_directory(path: &Path) {
         }
     };
 
-    let quarantine_dir = root.join(".pscanav-quarantine");
     let mut files: Vec<PathBuf> = Vec::new();
     let mut errors = 0usize;
 
     println!("[+] Discovering files...");
 
-    for entry in WalkDir::new(&root)
-        .follow_links(false)
-        .into_iter()
-        .filter_entry(|entry| entry.path() != quarantine_dir.as_path())
-    {
+    for entry in WalkDir::new(&root).follow_links(false) {
         match entry {
             Ok(entry) if entry.file_type().is_file() => {
                 files.push(entry.path().to_path_buf());
@@ -40,30 +35,25 @@ pub fn scan_directory(path: &Path) {
     }
 
     let total = files.len();
-    let mut files_scanned = 0usize;
-    let mut suspicious_files: Vec<PathBuf> = Vec::new();
-    let mut malicious_files: Vec<PathBuf> = Vec::new();
+    let mut scanned = 0usize;
+    let mut suspicious = Vec::new();
+    let mut malicious = Vec::new();
 
     println!("[+] Found {total} files.");
     println!("[+] Starting scan...\n");
 
     for file in &files {
-        match verify_file(file, &quarantine_dir) {
+        match verify_file(file) {
             Ok(report) => {
-                files_scanned += 1;
+                scanned += 1;
 
                 match report.verdict {
                     Verdict::NoKnownThreats => {}
                     Verdict::Suspicious => {
-                        suspicious_files.push(file.clone());
+                        suspicious.push((file.clone(), report.findings));
                     }
                     Verdict::ConfirmedMalicious => {
-                        let display_path = report
-                            .quarantined_to
-                            .as_deref()
-                            .unwrap_or(file);
-
-                        malicious_files.push(display_path.to_path_buf());
+                        malicious.push((file.clone(), report.findings));
                     }
                 }
             }
@@ -73,27 +63,21 @@ pub fn scan_directory(path: &Path) {
             }
         }
 
-        let completed = files_scanned + errors;
+        let completed = scanned + errors;
         let percent = if total == 0 {
             100
         } else {
             completed * 100 / total
         };
 
-        let bar_length = 30;
-        let filled = percent * bar_length / 100;
-
+        let filled = percent * 30 / 100;
         let bar = format!(
             "{}{}",
             "#".repeat(filled),
-            "-".repeat(bar_length - filled)
+            "-".repeat(30 - filled)
         );
 
-        print!(
-            "\r[{}] {}% ({}/{})",
-            bar, percent, completed, total
-        );
-
+        print!("\r[{}] {}% ({}/{})", bar, percent, completed, total);
         let _ = io::stdout().flush();
     }
 
@@ -103,22 +87,32 @@ pub fn scan_directory(path: &Path) {
 
     println!("\n[SUMMARY]");
     println!("Files discovered: {total}");
-    println!("Files scanned: {files_scanned}");
+    println!("Files scanned: {scanned}");
     println!("Errors: {errors}");
-    println!("Suspicious: {}", suspicious_files.len());
-    println!("Malicious: {}", malicious_files.len());
+    println!("Suspicious: {}", suspicious.len());
+    println!("Malicious: {}", malicious.len());
 
-    if !suspicious_files.is_empty() {
-        println!("\n[SUSPICIOUS]");
-        for file in &suspicious_files {
-            println!("{}", file.display());
+    if !suspicious.is_empty() {
+        println!("\n[SUSPICIOUS FILES]");
+
+        for (file, findings) in &suspicious {
+            println!("\n{}", file.display());
+            for finding in findings {
+                println!("  - {finding}");
+            }
         }
     }
 
-    if !malicious_files.is_empty() {
-        println!("\n[MALICIOUS]");
-        for file in &malicious_files {
-            println!("{}", file.display());
+    if !malicious.is_empty() {
+        println!("\n[CONFIRMED MALICIOUS FILES]");
+
+        for (file, findings) in &malicious {
+            println!("\n{}", file.display());
+            for finding in findings {
+                println!("  - {finding}");
+            }
         }
     }
+
+    println!("\n[!] Detection is heuristic-based; no detection is not proof of safety.");
 }
