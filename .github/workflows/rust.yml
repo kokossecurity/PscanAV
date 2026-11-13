@@ -1,0 +1,25 @@
+
+name: PscanAV Rust Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compile PscanAV
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Check Rust code
+        run: cargo check --all-targets
+
+      - name: Build PscanAV
+        run: cargo build --release
