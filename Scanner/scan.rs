@@ -14,37 +14,57 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
     let root = match fs::canonicalize(path) {
         Ok(root) => root,
         Err(error) => {
-            eprintln!("[ERROR] Cannot access directory: {error}");
+            eprintln!("[ERROR] Cannot access target: {error}");
             return;
         }
     };
 
     let mut files: Vec<PathBuf> = Vec::new();
-    let mut errors = 0usize;
+    let mut discovery_errors = 0usize;
 
-    println!("[+] Discovering files...");
+    println!("[+] Discovering accessible files...");
 
-    for entry in WalkDir::new(&root).follow_links(false) {
+    let walker = WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            let path = entry.path();
+
+            if entry.depth() == 0 {
+                return true;
+            }
+
+            ![
+                "/proc",
+                "/sys",
+                "/dev",
+            ]
+            .iter()
+            .any(|excluded| path == Path::new(excluded))
+        });
+
+    for entry in walker {
         match entry {
             Ok(entry) if entry.file_type().is_file() => {
                 files.push(entry.path().to_path_buf());
             }
             Ok(_) => {}
             Err(error) => {
-                eprintln!("[ERROR] {error}");
-                errors += 1;
+                discovery_errors += 1;
+                eprintln!("[ACCESS ERROR] {error}");
             }
         }
     }
 
     let total = files.len();
     let mut scanned = 0usize;
+    let mut scan_errors = 0usize;
 
     let mut suspicious = Vec::new();
     let mut malicious = Vec::new();
     let mut yara_detections: Vec<(PathBuf, Vec<String>)> = Vec::new();
 
-    println!("[+] Found {total} files.");
+    println!("[+] Found {total} accessible files.");
     println!("[+] Starting scan...\n");
 
     for file in &files {
@@ -59,8 +79,8 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
                 }
             }
             Err(error) => {
-                errors += 1;
-                eprintln!("\n[ERROR] {}: {error}", file.display());
+                scan_errors += 1;
+                eprintln!("\n[SCAN ERROR] {}: {error}", file.display());
             }
         }
 
@@ -76,7 +96,7 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
             }
         }
 
-        let completed = scanned + errors;
+        let completed = scanned + scan_errors;
         let percent = if total == 0 {
             100
         } else {
@@ -104,7 +124,8 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
     println!("\n[SUMMARY]");
     println!("Files discovered: {total}");
     println!("Files scanned: {scanned}");
-    println!("Errors: {errors}");
+    println!("Scan errors: {scan_errors}");
+    println!("Discovery errors: {discovery_errors}");
     println!("Suspicious: {}", suspicious.len());
     println!("Malicious: {}", malicious.len());
     println!("YARA matches: {}", yara_detections.len());
