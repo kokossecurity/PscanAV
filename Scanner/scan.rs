@@ -79,7 +79,6 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
     let mut scan_errors = 0usize;
     let mut yara_errors = 0usize;
 
-    let mut suspicious = Vec::new();
     let mut malicious = Vec::new();
     let mut yara_detections: Vec<(PathBuf, Vec<String>)> = Vec::new();
 
@@ -91,10 +90,8 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
             Ok(report) => {
                 scanned += 1;
 
-                match report.verdict {
-                    Verdict::Suspicious => suspicious.push(file.clone()),
-                    Verdict::ConfirmedMalicious => malicious.push(file.clone()),
-                    Verdict::NoKnownThreats => {}
+                if report.verdict == Verdict::ConfirmedMalicious {
+                    malicious.push(file.clone());
                 }
             }
             Err(error) => {
@@ -106,7 +103,6 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
             }
         }
 
-        // Do not scan YARA rule source files with YARA itself.
         if let Some(engine) = yara {
             if !is_yara_rule_file(file) {
                 match engine.scan_file(file) {
@@ -158,13 +154,8 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
     println!("Discovery errors: {discovery_errors}");
     println!("Scan errors: {scan_errors}");
     println!("YARA errors: {yara_errors}");
-    println!("Suspicious: {}", suspicious.len());
     println!("Malicious: {}", malicious.len());
     println!("Files with YARA matches: {}", yara_detections.len());
-
-    for file in &suspicious {
-        println!("\n[SUSPICIOUS] {}", file.display());
-    }
 
     for file in &malicious {
         println!("\n[MALICIOUS] {}", file.display());
