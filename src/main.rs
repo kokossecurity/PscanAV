@@ -5,38 +5,47 @@ mod verifier;
 #[path = "../Scanner/scan.rs"]
 mod file_scanner;
 
+#[path = "../engines/yara.rs"]
+mod yara;
+
 use std::{env, path::Path};
 
 fn main() {
     println!("================================");
-    println!("          PscanAV v0.1");
-    println!("     Linux File Scanner");
+    println!("          PscanAV v0.2");
+    println!("     Advanced File Scanner");
     println!("================================");
 
     let args: Vec<String> = env::args().skip(1).collect();
 
     if args.is_empty() {
-        eprintln!("\n[ERROR] No scan targets provided.");
+        eprintln!("[ERROR] Usage: pscanav <directory>");
         return;
     }
 
-    println!("\n[+] Initializing PscanAV...");
-    println!("[+] Scan targets: {}", args.len());
+    let rules_path = Path::new("rules");
+
+    let yara_engine = match yara::YaraEngine::new(rules_path) {
+        Ok(engine) => {
+            println!("[+] YARA engine initialized.");
+            Some(engine)
+        }
+        Err(error) => {
+            eprintln!("[!] YARA unavailable: {error}");
+            None
+        }
+    };
 
     for target in &args {
         let path = Path::new(target);
 
         if !path.is_dir() {
-            eprintln!("\n[ERROR] Invalid directory: {}", path.display());
+            eprintln!("[ERROR] Invalid directory: {}", path.display());
             continue;
         }
 
-        println!("\n================================");
-        println!("[+] Target: {}", path.display());
-        println!("================================");
+        println!("\n[+] Target: {}", path.display());
 
-        file_scanner::scan_directory(path);
+        file_scanner::scan_directory(path, yara_engine.as_ref());
     }
-
-    println!("\n[+] All scan targets processed.");
 }
