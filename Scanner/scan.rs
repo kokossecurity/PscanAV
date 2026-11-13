@@ -1,72 +1,84 @@
 
-use sha2::{Digest, Sha256};
+use crate::verifier::{verify_file, Verdict};
 use std::{
-    fs::File,
-    io::{self, Read},
-    path::Path,
+    fs,
+    path::{Path, PathBuf},
 };
 use walkdir::WalkDir;
 
-const BUFFER_SIZE: usize = 64 * 1024;
-
-pub struct ScanReport {
-    pub files_scanned: usize,
-    pub errors: usize,
-}
-
-fn calculate_hash(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; BUFFER_SIZE];
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
+pub fn scan_directory(path: &Path) {
+    let root = match fs::canonicalize(path) {
+        Ok(root) => root,
+        Err(error) => {
+            eprintln!("[ERROR] Cannot access directory: {}", error);
+            return;
         }
-
-        hasher.update(&buffer[..bytes_read]);
-    }
-
-    Ok(hex::encode(hasher.finalize()))
-}
-
-pub fn scan_directory(path: &Path) -> ScanReport {
-    let mut report = ScanReport {
-        files_scanned: 0,
-        errors: 0,
     };
 
-    println!("\n========== PSCANAV ==========");
-    println!("Scanning directory...\n");
+    let quarantine_dir = root.join(".pscanav-quarantine");
 
-    for entry in WalkDir::new(path).follow_links(false) {
+    let mut suspicious_files: Vec<PathBuf> = Vec::new();
+    let mut malicious_files: Vec<PathBuf> = Vec::new();
+
+    let entries = WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| entry.path() != quarantine_dir.as_path());
+
+    for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) => {
-                report.errors += 1;
-                continue;
-            }
+            Err(_) => continue,
         };
 
         if !entry.file_type().is_file() {
             continue;
         }
 
-        match calculate_hash(entry.path()) {
-            Ok(_hash) => {
-                report.files_scanned += 1;
+        let verification = match verify_file(entry.path(), &quarantine_dir) {
+            Ok(report) => report,
+            Err(_) => continue,
+        };
+
+        match &verification.verdict {
+            Verdict::NoKnownThreats => {}
+
+            Verdict::Suspicious => {
+                suspicious_files.push(entry.path().to_path_buf());
             }
-            Err(_) => {
-                report.errors += 1;
+
+            Verdict::ConfirmedMalicious => {
+                let display_path = verification
+                    .quarantined_to
+                    .as_deref()
+                    .unwrap_or(entry.path());
+
+                malicious_files.push(display_path.to_path_buf());
             }
         }
     }
 
-    println!("========== RESULTS ==========");
-    println!("Files scanned: {}", report.files_scanned);
-    println!("Errors: {}", report.errors);
-    println!("=============================");
+    println!("==================");
+    println!("  Scan Completed");
+    println!("==================");
 
-    report
+    if !suspicious_files.is_empty() {
+        println!("\n[SUSPICIOUS]");
+
+        for file in &suspicious_files {
+            println!("{}", file.display());
+        }
+    }
+
+    if !malicious_files.is_empty() {
+        if suspicious_files.is_empty() {
+            println!("\n[MALICIOUS]");
+        } else {
+            println!("\n\n[MALICIOUS]");
+        }
+
+        for file in &malicious_files {
+            println!("{}", file.display());
+        }
+    }
 }
