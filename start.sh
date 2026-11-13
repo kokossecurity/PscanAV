@@ -2,12 +2,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "================================"
-echo "       PscanAV Launcher"
-echo "================================"
-
 if [[ $# -ne 1 ]]; then
-    echo "Usage: ./start.sh <directory>"
+    echo "[ERROR] Usage: ./start.sh <directory>"
     exit 1
 fi
 
@@ -26,17 +22,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "$SCRIPT_DIR"
 
-echo "[+] Initializing PscanAV..."
-echo "[+] Target: $TARGET_DIR"
-echo "[+] Building PscanAV..."
-
-if ! cargo build --release --quiet 2>/tmp/pscanav-build.log; then
+if ! cargo build --release --quiet >/dev/null 2>&1; then
     echo "[ERROR] Build failed!"
-    cat /tmp/pscanav-build.log
+    cargo build --release 2>&1
     exit 1
 fi
-
-echo "[+] Build successful."
-echo "[+] Launching scanner..."
 
 exec ./target/release/pscanav "$TARGET_DIR"
