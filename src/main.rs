@@ -1,5 +1,5 @@
 
-#[path = "../Scanner/FileScanner.rs"]
+#[path = "../Scanner/scan.rs"]
 mod file_scanner;
 
 use std::env;
@@ -14,30 +14,25 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() != 2 {
-        println!("\nUsage: pscanav <directory>");
+        eprintln!("\nUsage: pscanav <directory>");
         return;
     }
 
     let target = Path::new(&args[1]);
 
-    if !target.exists() {
-        eprintln!("\n[ERROR] Directory does not exist.");
-        return;
-    }
-
     if !target.is_dir() {
-        eprintln!("\n[ERROR] Target must be a directory.");
+        eprintln!("\n[ERROR] Invalid directory.");
         return;
     }
 
-    println!("\n[+] Initializing scanner...");
+    println!("\n[+] Initializing PscanAV...");
     println!("[+] Target: {}", target.display());
     println!("[+] Starting scan...\n");
 
     let report = file_scanner::scan_directory(target);
 
     println!("\n================================");
-    println!("         SCAN COMPLETE");
+    println!("          SCAN COMPLETE");
     println!("================================");
     println!("Files scanned: {}", report.files_scanned);
     println!("Errors: {}", report.errors);
