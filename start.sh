@@ -1,23 +1,19 @@
 
 #!/usr/bin/env bash
 
-set -u
+set -eu
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR" || exit 1
+cd "$SCRIPT_DIR"
 
 echo "================================"
 echo "          PscanAV"
-echo "       Full Access Scan"
+echo "       Full System Scan"
 echo "================================"
 
 echo "[+] Building PscanAV..."
 
-if ! cargo build --release; then
-    echo "[ERROR] Build failed."
-    exit 1
-fi
+cargo build --release
 
-echo "[+] Starting full-access scan..."
-
+echo "[+] Starting scan from /..."
 exec ./target/release/pscanav /
