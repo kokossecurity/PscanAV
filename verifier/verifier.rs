@@ -8,7 +8,7 @@ use std::{
 
 const BUFFER_SIZE: usize = 64 * 1024;
 
-// Only hashes verified by trusted threat-intelligence sources belong here.
+// Only add hashes from trusted threat-intelligence sources.
 const KNOWN_BAD_SHA256: &[&str] = &[];
 
 const INDICATORS: &[(&[u8], &str)] = &[
@@ -21,7 +21,7 @@ const INDICATORS: &[(&[u8], &str)] = &[
     (b"mkfifo", "References named-pipe creation"),
 ];
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     NoKnownThreats,
     Suspicious,
@@ -58,17 +58,18 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
         .max()
         .unwrap_or(1);
 
-    let mut carry: Vec<u8> = Vec::new();
+    let mut carry = Vec::new();
     let mut indicator_hits = vec![false; INDICATORS.len()];
 
-    // Hash, calculate entropy, and inspect indicators across the whole file.
     loop {
         let bytes_read = file.read(&mut buffer)?;
+
         if bytes_read == 0 {
             break;
         }
 
         let chunk = &buffer[..bytes_read];
+
         hasher.update(chunk);
         total_bytes += bytes_read as u64;
 
@@ -92,9 +93,7 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
 
         for (index, (marker, _)) in INDICATORS.iter().enumerate() {
             if !indicator_hits[index]
-                && lowercase
-                    .windows(marker.len())
-                    .any(|window| window == *marker)
+                && lowercase.windows(marker.len()).any(|w| w == *marker)
             {
                 indicator_hits[index] = true;
             }
@@ -108,16 +107,17 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
     let file_type = identify_file_type(&header);
 
     let mut findings = Vec::new();
-    let mut score = 0u8;
+    let mut indicator_score = 0u8;
 
     for (index, (_, description)) in INDICATORS.iter().enumerate() {
         if indicator_hits[index] {
             findings.push(description.to_string());
-            score += 1;
+            indicator_score += 1;
         }
     }
 
-    // Shannon entropy calculated across the entire file.
+    // Entropy is informational only. Compressed files naturally have
+    // high entropy, so it must not independently increase suspicion.
     let mut entropy = 0.0;
 
     if total_bytes > 0 {
@@ -134,22 +134,25 @@ pub fn verify_file(path: &Path) -> io::Result<VerificationReport> {
             "High entropy ({:.2}/8.0); compression or encryption may explain this.",
             entropy
         ));
-        score += 1;
     }
 
+    // Extension mismatches are warnings, not malware evidence.
     if let Some(message) = extension_mismatch(path, file_type) {
         findings.push(message);
-        score += 2;
     }
 
     let known_bad = KNOWN_BAD_SHA256
         .iter()
         .any(|known| *known == sha256.as_str());
 
+    // Generic strings are weak indicators. Require multiple indicators
+    // before assigning a suspicious verdict.
     let verdict = if known_bad {
-        findings.push("Exact SHA-256 match in the trusted local threat list.".into());
+        findings.push(
+            "Exact SHA-256 match in the trusted local threat list.".into(),
+        );
         Verdict::ConfirmedMalicious
-    } else if score >= 3 {
+    } else if indicator_score >= 3 {
         Verdict::Suspicious
     } else {
         Verdict::NoKnownThreats
@@ -181,6 +184,17 @@ fn identify_file_type(data: &[u8]) -> &'static str {
         "PNG image"
     } else if data.starts_with(b"\xFF\xD8\xFF") {
         "JPEG image"
+    } else if data.len() >= 12
+        && &data[0..4] == b"RIFF"
+        && &data[8..12] == b"WEBP"
+    {
+        "WebP image"
+    } else if data.starts_with(b"GIF87a")
+        || data.starts_with(b"GIF89a")
+    {
+        "GIF image"
+    } else if data.starts_with(b"BM") {
+        "BMP image"
     } else {
         "Unknown or text format"
     }
@@ -211,6 +225,9 @@ fn extension_mismatch(
         "JPEG image" => {
             !["jpg", "jpeg"].contains(&extension.as_str())
         }
+        "WebP image" => extension != "webp",
+        "GIF image" => extension != "gif",
+        "BMP image" => extension != "bmp",
         _ => false,
     };
 
@@ -223,4 +240,3 @@ fn extension_mismatch(
         None
     }
 }
-
