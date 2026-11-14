@@ -8,6 +8,9 @@ mod file_scanner;
 #[path = "../engines/yara.rs"]
 mod yara;
 
+#[path = "../engines/clamav.rs"]
+mod clamav;
+
 use std::{env, path::Path};
 
 fn main() {
@@ -36,6 +39,14 @@ fn main() {
         }
     };
 
+    let clamav_engine = match clamav::ClamAvEngine::new() {
+        Ok(engine) => Some(engine),
+        Err(error) => {
+            eprintln!("[!] ClamAV unavailable: {error}");
+            None
+        }
+    };
+
     for target in &args {
         let path = Path::new(target);
 
@@ -45,6 +56,26 @@ fn main() {
         }
 
         println!("\n[+] Target: {}", path.display());
+
+        if let Some(engine) = &clamav_engine {
+            match engine.scan_directory(path) {
+                Ok(detections) => {
+                    println!("\n[CLAMAV SUMMARY]");
+                    println!("Detections: {}", detections.len());
+
+                    for detection in detections {
+                        println!(
+                            "\n[CLAMAV DETECTION] {}",
+                            detection.path.display()
+                        );
+                        println!("  Signature: {}", detection.signature);
+                    }
+                }
+                Err(error) => {
+                    eprintln!("[CLAMAV ERROR] {error}");
+                }
+            }
+        }
 
         file_scanner::scan_directory(path, yara_engine.as_ref());
     }
