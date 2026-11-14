@@ -51,7 +51,6 @@ impl ClamAvEngine {
         let mut child = Command::new(&self.executable)
             .arg("--recursive")
             .arg("--infected")
-            .arg("--show-progress")
             .arg("--cross-fs=no")
             .arg("--exclude-dir=^/proc(/|$)")
             .arg("--exclude-dir=^/sys(/|$)")
