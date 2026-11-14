@@ -1,11 +1,9 @@
 
-name: PscanAV Linux Build
+name: PscanAV Auto Compiler
 
 on:
   push:
     branches: [main]
-    tags:
-      - "v*"
   pull_request:
   workflow_dispatch:
 
@@ -14,37 +12,36 @@ permissions:
 
 jobs:
   build:
-    name: Build Linux x86_64 binary
+    name: Compile PscanAV for Linux
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Check Rust code
+      - name: Check code
         run: cargo check --all-targets
 
-      - name: Build optimized executable
+      - name: Compile executable
         run: cargo build --release
 
-      - name: Package executable
+      - name: Place executable in repository
         run: |
-          chmod +x target/release/pscanav
-          tar -czf PscanAV-linux-x86_64.tar.gz -C target/release pscanav
+          mkdir -p bin
+          cp target/release/pscanav bin/pscanav
+          chmod 755 bin/pscanav
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PscanAV-linux-x86_64
-          path: PscanAV-linux-x86_64.tar.gz
-          if-no-files-found: error
-
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: PscanAV-linux-x86_64.tar.gz
-          generate_release_notes: true
+      - name: Commit executable
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin/pscanav
+          if ! git diff --cached --quiet; then
+            git commit -m "Update precompiled Linux executable"
+            git push
+          fi
