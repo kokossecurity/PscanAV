@@ -1,14 +1,19 @@
 
-use crate::verifier::{verify_file, Verdict};
 use crate::yara::YaraEngine;
 
 use std::{
-    fs,
     io::{self, Write},
     path::{Path, PathBuf},
 };
 
 use walkdir::{DirEntry, WalkDir};
+
+pub struct ScanResults {
+    pub yara_detections: Vec<(PathBuf, Vec<String>)>,
+    pub files_discovered: usize,
+    pub discovery_errors: usize,
+    pub yara_errors: usize,
+}
 
 fn should_skip_directory(entry: &DirEntry) -> bool {
     const EXCLUDED: &[&str] = &[
@@ -37,12 +42,21 @@ fn is_yara_rule_file(path: &Path) -> bool {
     )
 }
 
-pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
-    let root = match fs::canonicalize(path) {
+pub fn scan_directory(
+    path: &Path,
+    yara: Option<&YaraEngine>,
+) -> ScanResults {
+    let root = match std::fs::canonicalize(path) {
         Ok(root) => root,
         Err(error) => {
             eprintln!("[ERROR] Cannot access target: {error}");
-            return;
+
+            return ScanResults {
+                yara_detections: Vec::new(),
+                files_discovered: 0,
+                discovery_errors: 1,
+                yara_errors: 0,
+            };
         }
     };
 
@@ -73,36 +87,15 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
     }
 
     let total = files.len();
-
     let mut processed = 0usize;
-    let mut scanned = 0usize;
-    let mut scan_errors = 0usize;
     let mut yara_errors = 0usize;
 
-    let mut malicious = Vec::new();
     let mut yara_detections: Vec<(PathBuf, Vec<String>)> = Vec::new();
 
     println!("\n[+] Discovered {total} accessible files.");
-    println!("[+] Starting scan...\n");
+    println!("[+] Starting engine scan...\n");
 
     for file in &files {
-        match verify_file(file) {
-            Ok(report) => {
-                scanned += 1;
-
-                if report.verdict == Verdict::ConfirmedMalicious {
-                    malicious.push(file.clone());
-                }
-            }
-            Err(error) => {
-                scan_errors += 1;
-                eprintln!(
-                    "\n[SCAN ERROR] {}: {error}",
-                    file.display()
-                );
-            }
-        }
-
         if let Some(engine) = yara {
             if !is_yara_rule_file(file) {
                 match engine.scan_file(file) {
@@ -147,19 +140,12 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
     println!("          Scan Completed");
     println!("================================");
 
-    println!("\n[SUMMARY]");
+    println!("\n[SCAN SUMMARY]");
     println!("Files discovered: {total}");
     println!("Files processed: {processed}");
-    println!("Files scanned: {scanned}");
     println!("Discovery errors: {discovery_errors}");
-    println!("Scan errors: {scan_errors}");
     println!("YARA errors: {yara_errors}");
-    println!("Malicious: {}", malicious.len());
     println!("Files with YARA matches: {}", yara_detections.len());
-
-    for file in &malicious {
-        println!("\n[MALICIOUS] {}", file.display());
-    }
 
     for (file, matches) in &yara_detections {
         println!("\n[YARA DETECTION] {}", file.display());
@@ -173,4 +159,11 @@ pub fn scan_directory(path: &Path, yara: Option<&YaraEngine>) {
         "\n[!] YARA matches are rule matches, not automatic proof of malware."
     );
     println!("[!] Inaccessible paths were skipped.");
+
+    ScanResults {
+        yara_detections,
+        files_discovered: total,
+        discovery_errors,
+        yara_errors,
+    }
 }
