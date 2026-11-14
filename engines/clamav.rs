@@ -1,8 +1,8 @@
 
 use std::{
-    io,
+    io::{self, BufRead, BufReader},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 pub struct ClamAvDetection {
@@ -29,8 +29,7 @@ impl ClamAvEngine {
             })?;
 
         if !output.status.success() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "Could not initialize ClamAV.",
             ));
         }
@@ -49,10 +48,10 @@ impl ClamAvEngine {
     ) -> io::Result<Vec<ClamAvDetection>> {
         println!("[+] ClamAV scanning: {}", directory.display());
 
-        let output = Command::new(&self.executable)
+        let mut child = Command::new(&self.executable)
             .arg("--recursive")
             .arg("--infected")
-            .arg("--no-summary")
+            .arg("--show-progress")
             .arg("--cross-fs=no")
             .arg("--exclude-dir=^/proc(/|$)")
             .arg("--exclude-dir=^/sys(/|$)")
@@ -60,42 +59,49 @@ impl ClamAvEngine {
             .arg("--exclude-dir=^/acct(/|$)")
             .arg("--exclude-dir=^/apex(/|$)")
             .arg(directory)
-            .output()?;
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = child.stdout.take().ok_or_else(|| {
+            io::Error::other("Could not capture ClamAV output.")
+        })?;
 
+        let reader = BufReader::new(stdout);
         let mut detections = Vec::new();
 
-        for line in stdout.lines().chain(stderr.lines()) {
-            let Some((path, result)) = line.rsplit_once(": ") else {
-                continue;
-            };
+        for line in reader.lines() {
+            let line = line?;
 
-            let Some(signature) = result.strip_suffix(" FOUND") else {
-                continue;
-            };
+            if let Some((path, result)) = line.rsplit_once(": ") {
+                if let Some(signature) = result.strip_suffix(" FOUND") {
+                    detections.push(ClamAvDetection {
+                        path: PathBuf::from(path),
+                        signature: signature.to_string(),
+                    });
 
-            detections.push(ClamAvDetection {
-                path: PathBuf::from(path),
-                signature: signature.to_string(),
-            });
+                    println!("\n[CLAMAV DETECTION] {}", path);
+                    println!("  Signature: {}", signature);
+                } else {
+                    println!("{line}");
+                }
+            } else if !line.trim().is_empty() {
+                println!("{line}");
+            }
         }
 
-        match output.status.code() {
-            Some(0) | Some(1) => Ok(detections),
-            code => {
-                let details = if stderr.trim().is_empty() {
-                    format!("clamscan exited with status {code:?}")
-                } else {
-                    stderr.trim().to_string()
-                };
+        let status = child.wait()?;
 
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    details,
-                ))
-            }
+        println!("\n================================");
+        println!("       CLAMAV SCAN COMPLETE");
+        println!("================================");
+        println!("Detections: {}", detections.len());
+
+        match status.code() {
+            Some(0) | Some(1) => Ok(detections),
+            code => Err(io::Error::other(
+                format!("ClamAV exited with status {code:?}"),
+            )),
         }
     }
 }
