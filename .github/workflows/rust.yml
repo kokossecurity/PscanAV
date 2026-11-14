@@ -1,18 +1,24 @@
 
-name: PscanAV Rust Build
+name: PscanAV Linux Build
 
 on:
   push:
+    branches: [main]
+    tags:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Compile PscanAV
+    name: Build Linux x86_64 binary
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Install Rust
@@ -21,5 +27,24 @@ jobs:
       - name: Check Rust code
         run: cargo check --all-targets
 
-      - name: Build PscanAV
+      - name: Build optimized executable
         run: cargo build --release
+
+      - name: Package executable
+        run: |
+          chmod +x target/release/pscanav
+          tar -czf PscanAV-linux-x86_64.tar.gz -C target/release pscanav
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PscanAV-linux-x86_64
+          path: PscanAV-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: PscanAV-linux-x86_64.tar.gz
+          generate_release_notes: true
